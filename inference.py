@@ -45,7 +45,7 @@ def log_step(step, action, reward, done, error):
 
 def log_end(success, steps, score, rewards):
     r = ",".join(f"{x:.2f}" for x in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={r}", flush=True)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={r}", flush=True)
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 def http_post(url, payload):
