@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-support-triage"
+version = "0.1.0"
+description = "Support Ticket Triage environment for OpenEnv — triage, prioritize and route customer support tickets"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core[core]>=0.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.24.0",
+]
+
+[project.scripts]
+server = "support_triage_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["support_triage_env", "support_triage_env.server"]
+package-dir = { "support_triage_env" = ".", "support_triage_env.server" = "server" }
