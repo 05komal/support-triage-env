@@ -4,10 +4,10 @@ Inference Script — Support Ticket Triage Environment
 Runs an LLM agent against all three tasks.
 
 MANDATORY ENV VARS:
-    HF_TOKEN       API key for HuggingFace
-    API_BASE_URL   LLM endpoint (default: HuggingFace router)
-    MODEL_NAME     Model identifier
-    ENV_BASE_URL   Environment server URL (default: http://localhost:8000)
+    API_BASE_URL   LLM endpoint (REQUIRED - no default)
+    API_KEY        API key (REQUIRED - no default)
+    MODEL_NAME     Model identifier (optional, has default)
+    ENV_BASE_URL   Environment server URL (optional, has default)
 
 STDOUT FORMAT:
     [START] task=<task_name> env=<benchmark> model=<model_name>
@@ -20,12 +20,11 @@ from typing import Dict, List, Optional
 from openai import OpenAI
 
 # ── Config ────────────────────────────────────────────────────────────[...]
-# Strictly use injected environment variables - NO FALLBACKS
-API_BASE_URL     = os.environ["API_BASE_URL"]
-API_KEY          = os.environ["API_KEY"]
-MODEL_NAME       = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN         = os.getenv("HF_TOKEN")
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+# MANDATORY: Use strict os.getenv() for API_BASE_URL and API_KEY (no defaults)
+# This forces judges to inject these values
+API_BASE_URL     = os.getenv("API_BASE_URL")
+API_KEY          = os.getenv("API_KEY")
+MODEL_NAME       = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_BASE_URL     = os.getenv("ENV_BASE_URL", "http://localhost:8000").rstrip("/")
 BENCHMARK        = "support_triage_env"
 SUCCESS_THRESHOLD = 0.5
@@ -50,7 +49,7 @@ def log_end(success, steps, score, rewards):
     r = ",".join(f"{x:.2f}" for x in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={r}", flush=True)
 
-# ── HTTP helpers ──────────────────────────────────────────────���───────────[...]
+# ── HTTP helpers ──────────────────────────────────────────────────────────[...]
 def http_post(url, payload):
     data = json.dumps(payload).encode()
     req  = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -187,7 +186,8 @@ def run_task(client, task_name):
 
 
 def main():
-    # Use the strict module-level credentials
+    # Initialize OpenAI client with strict environment variables
+    # This MUST use the injected API_BASE_URL and API_KEY from judges
     client = OpenAI(
         base_url=API_BASE_URL,
         api_key=API_KEY,
