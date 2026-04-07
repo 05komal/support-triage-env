@@ -4,10 +4,10 @@ Inference Script — Support Ticket Triage Environment
 Runs an LLM agent against all three tasks.
 
 MANDATORY ENV VARS:
-    API_BASE_URL   LLM endpoint (REQUIRED - no default)
-    API_KEY        API key (REQUIRED - no default)
-    MODEL_NAME     Model identifier (optional, has default)
-    ENV_BASE_URL   Environment server URL (optional, has default)
+    HF_TOKEN       API key for HuggingFace
+    API_BASE_URL   LLM endpoint (default: HuggingFace router)
+    MODEL_NAME     Model identifier
+    ENV_BASE_URL   Environment server URL (default: http://localhost:8000)
 
 STDOUT FORMAT:
     [START] task=<task_name> env=<benchmark> model=<model_name>
@@ -19,14 +19,13 @@ import json, os, sys, textwrap, urllib.request, urllib.error
 from typing import Dict, List, Optional
 from openai import OpenAI
 
-# ── Config ────────────────────────────────────────────────────────────[...]
-# MANDATORY: Use strict os.getenv() for API_BASE_URL and API_KEY (no defaults)
-# This forces judges to inject these values
-API_BASE_URL     = os.getenv("API_BASE_URL")
-API_KEY          = os.getenv("API_KEY")
-MODEL_NAME       = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+# ── Config ───────────────────────────────────────────────────────────────────
+# NOTE: API_KEY and API_BASE_URL are read inside main() via os.environ[] directly
+MODEL_NAME       = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN         = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 ENV_BASE_URL     = os.getenv("ENV_BASE_URL", "http://localhost:8000").rstrip("/")
-BENCHMARK        = "support_triage_env"
+BENCHMARK    = "support_triage_env"
 SUCCESS_THRESHOLD = 0.5
 
 # Task definitions: name → list of ticket indices to process
@@ -36,7 +35,7 @@ TASKS = {
     "hard_adversarial_triage": {"tickets": 5},
 }
 
-# ── Logging ─────────────────────────────────────────────────────────────[...]
+# ── Logging ──────────────────────────────────────────────────────────────────
 def log_start(task, env, model):
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -49,7 +48,7 @@ def log_end(success, steps, score, rewards):
     r = ",".join(f"{x:.2f}" for x in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={r}", flush=True)
 
-# ── HTTP helpers ──────────────────────────────────────────────────────────[...]
+# ── HTTP helpers ──────────────────────────────────────────────────────────────
 def http_post(url, payload):
     data = json.dumps(payload).encode()
     req  = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -60,7 +59,7 @@ def http_get(url):
     with urllib.request.urlopen(url, timeout=10) as r:
         return json.loads(r.read().decode())
 
-# ── Prompts ─────────────────────────────────────────────────────────────[...]
+# ── Prompts ───────────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = textwrap.dedent("""
 You are an expert customer support manager triaging support tickets.
 Respond ONLY with a valid JSON object — no explanation, no markdown fences.
@@ -134,7 +133,7 @@ def call_model(client, obs, step, total):
         "needs_escalation": False, "needs_more_info": False,
     }
 
-# ── Episode runner ─────────────────────────────────────────────────────────[...]
+# ── Episode runner ────────────────────────────────────────────────────────────
 def run_task(client, task_name):
     n_tickets = TASKS[task_name]["tickets"]
     rewards, steps_taken = [], 0
@@ -186,11 +185,9 @@ def run_task(client, task_name):
 
 
 def main():
-    # Initialize OpenAI client with strict environment variables
-    # This MUST use the injected API_BASE_URL and API_KEY from judges
     client = OpenAI(
-        base_url=API_BASE_URL,
-        api_key=API_KEY,
+        api_key=os.environ["API_KEY"],
+        base_url=os.environ["API_BASE_URL"],
     )
 
     try:
