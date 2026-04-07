@@ -19,7 +19,7 @@ import json, os, sys, textwrap, urllib.request, urllib.error
 from typing import Dict, List, Optional
 from openai import OpenAI
 
-# ── Config ───────────────────────────────────────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────────[...]
 # Use os.environ[] so judges injected values are always used
 API_BASE_URL     = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME       = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
@@ -38,7 +38,7 @@ TASKS = {
     "hard_adversarial_triage": {"tickets": 5},
 }
 
-# ── Logging ──────────────────────────────────────────────────────────────────
+# ── Logging ─────────────────────────────────────────────────────────────[...]
 def log_start(task, env, model):
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -51,7 +51,7 @@ def log_end(success, steps, score, rewards):
     r = ",".join(f"{x:.2f}" for x in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={r}", flush=True)
 
-# ── HTTP helpers ──────────────────────────────────────────────────────────────
+# ── HTTP helpers ──────────────────────────────────────��───────────────────[...]
 def http_post(url, payload):
     data = json.dumps(payload).encode()
     req  = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -62,7 +62,7 @@ def http_get(url):
     with urllib.request.urlopen(url, timeout=10) as r:
         return json.loads(r.read().decode())
 
-# ── Prompts ───────────────────────────────────────────────────────────────────
+# ── Prompts ─────────────────────────────────────────────────────────────[...]
 SYSTEM_PROMPT = textwrap.dedent("""
 You are an expert customer support manager triaging support tickets.
 Respond ONLY with a valid JSON object — no explanation, no markdown fences.
@@ -136,7 +136,7 @@ def call_model(client, obs, step, total):
         "needs_escalation": False, "needs_more_info": False,
     }
 
-# ── Episode runner ────────────────────────────────────────────────────────────
+# ── Episode runner ─────────────────────────────────────────────────────────[...]
 def run_task(client, task_name):
     n_tickets = TASKS[task_name]["tickets"]
     rewards, steps_taken = [], 0
@@ -191,8 +191,8 @@ def main():
     # Strictly use injected API_BASE_URL and API_KEY from environment
     # This ensures all LLM calls go through the judges LiteLLM proxy
     client = OpenAI(
-        base_url=os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1"),
-        api_key=os.environ.get("API_KEY") or os.environ.get("HF_TOKEN") or "dummy",
+        base_url=os.environ["API_BASE_URL"],
+        api_key=os.environ["API_KEY"],
     )
 
     try:
