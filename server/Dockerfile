@@ -1,25 +1,19 @@
-# ─── Support Ticket Triage Environment ───────────────────────────────────────
-# OpenEnv-compatible Docker image for Hugging Face Spaces
-# Build: docker build -t support-triage-env -f server/Dockerfile .
-# Run:   docker run -p 8000:8000 support-triage-env
-# ─────────────────────────────────────────────────────────────────────────────
-FROM python:3.11-slim
+FROM python:3.11-slim-bullseye
 
 WORKDIR /app
 
-# System deps
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies first (layer cache)    
-RUN pip install --no-cache-dir "openenv-core[core]>=0.2.2" uvicorn
+RUN pip install --no-cache-dir \
+    "openenv-core[core]>=0.2.2" \
+    "uvicorn>=0.24.0" \
+    "fastapi>=0.100.0" \
+    "pydantic>=2.0.0"
 
-
-#copy teh environment code to the container
 COPY . /app/env
 
-# Make sure the env root is importable
 ENV PYTHONPATH="/app/env:${PYTHONPATH}"
 
 EXPOSE 7860
