@@ -20,11 +20,13 @@ from typing import Dict, List, Optional
 from openai import OpenAI
 
 # ── Config ───────────────────────────────────────────────────────────────────
-API_BASE_URL     = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME       = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+# Use os.environ[] so judges injected values are always used
+API_BASE_URL     = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME       = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN         = os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-API_KEY          = os.getenv("API_KEY") or HF_TOKEN or "dummy"
+# API_KEY must come from environment — judges inject this
+API_KEY          = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN") or "dummy"
 ENV_BASE_URL     = os.getenv("ENV_BASE_URL", "http://localhost:8000").rstrip("/")
 BENCHMARK    = "support_triage_env"
 SUCCESS_THRESHOLD = 0.5
@@ -186,7 +188,12 @@ def run_task(client, task_name):
 
 
 def main():
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    # Strictly use injected API_BASE_URL and API_KEY from environment
+    # This ensures all LLM calls go through the judges LiteLLM proxy
+    client = OpenAI(
+        base_url=os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1"),
+        api_key=os.environ.get("API_KEY") or os.environ.get("HF_TOKEN") or "dummy",
+    )
 
     try:
         http_get(f"{ENV_BASE_URL}/health")
