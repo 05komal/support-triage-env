@@ -1,4 +1,5 @@
-FROM python:3.11-slim-bullseye
+ARG BASE_IMAGE=ghcr.io/meta-pytorch/openenv-base:latest
+FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
