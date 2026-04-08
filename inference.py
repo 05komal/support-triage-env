@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 
 from openai import OpenAI
 
-# ── Mandatory variables (matching sample inference.py exactly) ────────────────
+# ── Mandatory variables ────────────────
 IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 API_KEY    = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
@@ -40,7 +40,7 @@ TASKS = {
     "hard_adversarial_triage": {"tickets": 5},
 }
 
-# ── Logging (exact format required) ──────────────────────────────────────────
+# ── Logging  ──────────────────────────────────────────
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -191,7 +191,7 @@ def run_task(client: OpenAI, task_name: str) -> None:
 
 
 def main() -> None:
-    # Initialize OpenAI client exactly as judges require
+    # Initialize OpenAI client 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     try:
