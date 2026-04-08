@@ -1,61 +1,69 @@
 """
 Inference Script — Support Ticket Triage Environment
 =====================================================
-Runs an LLM agent against all three tasks.
-
-MANDATORY ENV VARS:
-    HF_TOKEN       API key for HuggingFace
-    API_BASE_URL   LLM endpoint (default: HuggingFace router)
-    MODEL_NAME     Model identifier
-    ENV_BASE_URL   Environment server URL (default: http://localhost:8000)
+MANDATORY env vars (injected by judges):
+    API_BASE_URL     The API endpoint for the LLM proxy.
+    API_KEY          The API key for the LLM proxy.
+    MODEL_NAME       The model identifier to use for inference.
+    HF_TOKEN         Your Hugging Face / API key (local use).
+    LOCAL_IMAGE_NAME Docker image name (if using from_docker_image()).
 
 STDOUT FORMAT:
     [START] task=<task_name> env=<benchmark> model=<model_name>
     [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-    [END]   success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...>
+    [END]   success=<true|false> steps=<n> score=<0.00> rewards=<r1,r2,...,rn>
 """
 
-import json, os, sys, textwrap, urllib.request, urllib.error
+import json
+import os
+import textwrap
+import urllib.request
 from typing import Dict, List, Optional
+
 from openai import OpenAI
 
-# ── Config ───────────────────────────────────────────────────────────────────
-# NOTE: API_KEY and API_BASE_URL are read inside main() via os.environ[] directly
-MODEL_NAME       = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN         = os.getenv("HF_TOKEN")
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-ENV_BASE_URL     = os.getenv("ENV_BASE_URL", "http://localhost:8000").rstrip("/")
-BENCHMARK    = "support_triage_env"
+# ── Mandatory variables (matching sample inference.py exactly) ────────────────
+IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+API_KEY    = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME   = os.getenv("MODEL_NAME")   or "Qwen/Qwen2.5-72B-Instruct"
+
+# ── Environment config ────────────────────────────────────────────────────────
+ENV_BASE_URL      = os.getenv("ENV_BASE_URL", "http://localhost:8000").rstrip("/")
+BENCHMARK         = "support_triage_env"
 SUCCESS_THRESHOLD = 0.5
 
-# Task definitions: name → list of ticket indices to process
 TASKS = {
-    "easy_single_ticket":    {"tickets": 1},
-    "medium_batch_triage":   {"tickets": 5},
+    "easy_single_ticket":      {"tickets": 1},
+    "medium_batch_triage":     {"tickets": 5},
     "hard_adversarial_triage": {"tickets": 5},
 }
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-def log_start(task, env, model):
+# ── Logging (exact format required) ──────────────────────────────────────────
+def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
-def log_step(step, action, reward, done, error):
-    err = error if error else "null"
-    action_safe = str(action).replace("\n", " ")[:200]
-    print(f"[STEP] step={step} action={action_safe} reward={reward:.2f} done={str(done).lower()} error={err}", flush=True)
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val  = str(done).lower()
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
+    )
 
-def log_end(success, steps, score, rewards):
-    r = ",".join(f"{x:.2f}" for x in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={r}", flush=True)
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}", flush=True)
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
-def http_post(url, payload):
+def http_post(url: str, payload: Dict) -> Dict:
     data = json.dumps(payload).encode()
     req  = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode())
 
-def http_get(url):
+def http_get(url: str) -> Dict:
     with urllib.request.urlopen(url, timeout=10) as r:
         return json.loads(r.read().decode())
 
@@ -81,22 +89,23 @@ Priority rules:
 - low: feature requests, general inquiries, minor questions
 
 Team routing (must match category):
-billing→billing_team, technical→tech_support, account→account_team,
-shipping→fulfillment, returns→returns_team, general→general_support
+billing->billing_team, technical->tech_support, account->account_team,
+shipping->fulfillment, returns->returns_team, general->general_support
 
 Escalate when: enterprise outage, security breach, legal threat, critical priority issue.
 """).strip()
 
-def build_prompt(obs, step, total):
+
+def build_prompt(obs: Dict, step: int, total: int) -> str:
     hints = "\n".join(f"  - {h}" for h in obs.get("grader_hints", []))
     return textwrap.dedent(f"""
-    Task: {obs.get('task_name','')} | Ticket {step} of {total}
-    Customer Tier: {obs.get('customer_tier','standard')} | 
-    Account age: {obs.get('account_age_days',0)} days | 
-    Previous tickets: {obs.get('previous_tickets',0)}
+    Task: {obs.get('task_name', '')} | Ticket {step} of {total}
+    Customer Tier: {obs.get('customer_tier', 'standard')}
+    Account age: {obs.get('account_age_days', 0)} days
+    Previous tickets: {obs.get('previous_tickets', 0)}
 
-    Subject: {obs.get('subject','')}
-    {obs.get('body','')}
+    Subject: {obs.get('subject', '')}
+    {obs.get('body', '')}
 
     Hints:
 {hints}
@@ -104,74 +113,71 @@ def build_prompt(obs, step, total):
     Respond with JSON only.
     """).strip()
 
-def call_model(client, obs, step, total):
+
+def get_model_action(client: OpenAI, obs: Dict, step: int, total: int) -> Dict:
+    user_prompt = build_prompt(obs, step, total)
     try:
-        resp = client.chat.completions.create(
+        completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": build_prompt(obs, step, total)},
+                {"role": "user",   "content": user_prompt},
             ],
             temperature=0.1,
             max_tokens=400,
+            stream=False,
         )
-        text = (resp.choices[0].message.content or "").strip()
-        # Strip markdown fences if present
+        text = (completion.choices[0].message.content or "").strip()
         if "```" in text:
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:]
         return json.loads(text.strip())
-    except json.JSONDecodeError:
-        print(f"[DEBUG] JSON parse failed, using fallback", flush=True)
-    except Exception as e:
-        print(f"[DEBUG] Model call failed: {e}", flush=True)
-    # Safe fallback
-    return {
-        "category": "general", "priority": "medium", "team": "general_support",
-        "response_draft": "Thank you for contacting us. We will look into this shortly.",
-        "needs_escalation": False, "needs_more_info": False,
-    }
+    except Exception as exc:
+        print(f"[DEBUG] Model request failed: {exc}", flush=True)
+        return {
+            "category": "general", "priority": "medium", "team": "general_support",
+            "response_draft": "Thank you for contacting us. We will look into this shortly.",
+            "needs_escalation": False, "needs_more_info": False,
+        }
+
 
 # ── Episode runner ────────────────────────────────────────────────────────────
-def run_task(client, task_name):
-    n_tickets = TASKS[task_name]["tickets"]
-    rewards, steps_taken = [], 0
-    score, success = 0.0, False
+def run_task(client: OpenAI, task_name: str) -> None:
+    n_tickets   = TASKS[task_name]["tickets"]
+    rewards: List[float] = []
+    steps_taken = 0
+    score       = 0.0
+    success     = False
 
     log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        # Reset to get first ticket observation
         result = http_post(f"{ENV_BASE_URL}/reset", {"task": task_name})
-        obs = result.get("observation", result)
+        obs    = result.get("observation", result)
 
         for step in range(1, n_tickets + 1):
             ticket_index = step - 1
 
-            # Ask LLM to triage this ticket
-            action_dict = call_model(client, obs, step, n_tickets)
-
-            # Add routing fields needed by stateless env
+            action_dict = get_model_action(client, obs, step, n_tickets)
             action_dict["task_name"]    = task_name
             action_dict["ticket_index"] = ticket_index
 
-            # Step the environment
             step_result = http_post(f"{ENV_BASE_URL}/step", {"action": action_dict})
             reward  = float(step_result.get("reward", 0.0))
             done    = bool(step_result.get("done", False))
             obs     = step_result.get("observation", step_result)
-            err_msg = step_result.get("error")
+            error   = None
 
             action_log = (
-                f"cat={action_dict.get('category','')},"
-                f"pri={action_dict.get('priority','')},"
-                f"team={action_dict.get('team','')},"
-                f"esc={action_dict.get('needs_escalation',False)}"
+                f"cat={action_dict.get('category', '')},"
+                f"pri={action_dict.get('priority', '')},"
+                f"team={action_dict.get('team', '')},"
+                f"esc={action_dict.get('needs_escalation', False)}"
             )
             rewards.append(reward)
             steps_taken = step
-            log_step(step=step, action=action_log, reward=reward, done=done, error=err_msg)
+            log_step(step=step, action=action_log, reward=reward, done=done, error=error)
 
         score   = min(max(sum(rewards) / max(len(rewards), 1), 0.0), 1.0)
         success = score >= SUCCESS_THRESHOLD
@@ -184,22 +190,21 @@ def run_task(client, task_name):
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 
-def main():
-    client = OpenAI(
-        api_key=os.environ["API_KEY"],
-        base_url=os.environ["API_BASE_URL"],
-    )
+def main() -> None:
+    # Initialize OpenAI client exactly as judges require
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     try:
         http_get(f"{ENV_BASE_URL}/health")
         print(f"[DEBUG] Server at {ENV_BASE_URL} is healthy", flush=True)
     except Exception as e:
-        print(f"[DEBUG] Health check failed: {e} — proceeding anyway", flush=True)
+        print(f"[DEBUG] Health check failed: {e} -- proceeding anyway", flush=True)
 
     for task in TASKS:
         print(f"\n[DEBUG] === Running task: {task} ===", flush=True)
         run_task(client, task)
         print("", flush=True)
+
 
 if __name__ == "__main__":
     main()
