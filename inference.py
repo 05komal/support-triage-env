@@ -24,10 +24,20 @@ from openai import OpenAI
 
 # ── Mandatory variables ────────────────
 IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-API_KEY    = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+
+# CRITICAL: Judges inject API_KEY + API_BASE_URL - use those FIRST!
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    print("[DEBUG] No API_KEY found, falling back to HF_TOKEN for local testing", flush=True)
+    API_KEY = os.getenv("HF_TOKEN")
 
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME   = os.getenv("MODEL_NAME")   or "Qwen/Qwen2.5-72B-Instruct"
+
+# Debug logging to verify judge env vars
+print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", flush=True)
+print(f"[DEBUG] API_KEY={'***' if API_KEY else 'MISSING'}", flush=True)
+print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", flush=True)
 
 # ── Environment config ────────────────────────────────────────────────────────
 ENV_BASE_URL      = os.getenv("ENV_BASE_URL", "http://localhost:8000").rstrip("/")
@@ -191,8 +201,13 @@ def run_task(client: OpenAI, task_name: str) -> None:
 
 
 def main() -> None:
-    # Initialize OpenAI client 
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    # Initialize OpenAI client with JUDGE-INJECTED credentials
+    client = OpenAI(
+        base_url=API_BASE_URL, 
+        api_key=API_KEY
+    )
+    
+    print(f"[DEBUG] OpenAI client initialized with base_url={API_BASE_URL[:50]}...", flush=True)
 
     try:
         http_get(f"{ENV_BASE_URL}/health")
